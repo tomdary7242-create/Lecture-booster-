@@ -410,11 +410,19 @@ function tokenize(text){
     if (!lines.length) return;
     lines.forEach((line, li) => {
       const ws = line.split(/\s+/).filter(Boolean);
+      let pre = '';
       ws.forEach((w, wi) => {
         const m = /^\{\{(\d+)\}\}$/.exec(w);
         if (m){ v = +m[1]; return; }
-        out.push({ t:w, p:pi, br: wi === ws.length-1 && li < lines.length-1, v }); v = undefined;
+        const br = wi === ws.length-1 && li < lines.length-1, last = out[out.length-1];
+        // ponctuation isolée (« ! » ; : …) : collée au mot voisin, jamais affichée seule
+        if (!/[\p{L}\p{N}&]/u.test(w)){
+          if (!pre && !/^[«(\[—–-]+$/.test(w) && last && last.p === pi){ last.t += (/^[.,)\]]/.test(w) ? '' : '\u202F') + w; last.br = br; return; }
+          if (wi < ws.length-1){ pre += w + '\u202F'; return; }
+        }
+        out.push({ t:pre + w, p:pi, br, v }); v = undefined; pre = '';
       });
+      if (pre) out.push({ t:pre.trim(), p:pi, br:li < lines.length-1, v });
     });
     if (out.length) out[out.length-1].end = true;
     pi++;
@@ -469,7 +477,7 @@ $('optRestart').onclick = () => { i = 0; save(); if (toks.length) show(0); if (m
 const save = () => { if (book) store.set('pos:'+book.id, i); };
 
 function pivotIndex(w){
-  const core = w.replace(/^[«"'(\[—]+|[»"')\].,;:!?…—]+$/g, '');
+  const core = w.replace(/^[«"'(\[—–\s]+|[»"')\].,;:!?…—\s]+$/g, '');
   const off = Math.max(0, w.indexOf(core.charAt(0))), n = core.length;
   return off + (n<=1 ? 0 : n<=5 ? 1 : n<=9 ? 2 : n<=13 ? 3 : 4);
 }
@@ -502,7 +510,7 @@ function delay(tk){
   let d = 60000 / wpm;
   const core = tk.t.replace(/[^\p{L}\p{N}]/gu, '');
   if ($('punct').checked){
-    if (tk.end) d *= 2.3; else if (/[.!?…]["»)]?$/.test(tk.t)) d *= 1.9; else if (/[,;:—]["»)]?$/.test(tk.t) || tk.br) d *= 1.4;
+    if (tk.end) d *= 2.3; else if (/[.!?…][\s"»)]*$/.test(tk.t)) d *= 1.9; else if (/[,;:—][\s"»)]*$/.test(tk.t) || tk.br) d *= 1.4;
   }
   if (core.length > 10) d *= 1.2; else if (core.length <= 3) d *= 0.85;
   if (/\d/.test(core) || (/^\p{Lu}/u.test(core) && core.length > 1)) d *= 1.1;
@@ -537,8 +545,8 @@ const toggle = () => playing ? pause() : play();
 function jump(n){ const was = playing; pause(); i = Math.min(toks.length-1, Math.max(0, i+n)); show(i); if (was) play(); }
 function sentenceStart(){
   let j = Math.max(0, i-1);
-  while (j > 0 && !/[.!?…]["»)]?$/.test(toks[j-1].t) && !toks[j-1].end) j--;
-  if (j === i && i > 0){ j = i-1; while (j > 0 && !/[.!?…]["»)]?$/.test(toks[j-1].t) && !toks[j-1].end) j--; }
+  while (j > 0 && !/[.!?…][\s"»)]*$/.test(toks[j-1].t) && !toks[j-1].end) j--;
+  if (j === i && i > 0){ j = i-1; while (j > 0 && !/[.!?…][\s"»)]*$/.test(toks[j-1].t) && !toks[j-1].end) j--; }
   return j;
 }
 $('sentence').onclick = () => { const was = playing; pause(); i = sentenceStart(); show(i); if (was) play(); };
